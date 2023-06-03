@@ -684,47 +684,55 @@ TMP_RH AirGradient::returnError(TMP_RH_ErrorCode error)
 //END TMP_RH FUNCTIONS //
 
 //START CO2 FUNCTIONS //
-void AirGradient::CO2_Init()
+int AirGradient::CO2_Init()
 {
-	CO2_Init(D4, D3);
+	return CO2_Init(D4, D3);
 }
 
-void AirGradient::CO2_Init(int rx_pin, int tx_pin)
+int AirGradient::CO2_Init(int rx_pin, int tx_pin)
 {
-	CO2_Init(rx_pin, tx_pin, 9600);
+	return CO2_Init(rx_pin, tx_pin, 9600);
 }
 
-void AirGradient::CO2_Init(int rx_pin, int tx_pin, int baudRate)
+int AirGradient::CO2_Init(int rx_pin, int tx_pin, int baudRate)
 {
+	int rv;
+
 	if (_debugMsg) {
 		Serial.println("Initializing CO2...");
 	}
 	_SoftSerial_CO2 = new SoftwareSerial(rx_pin, tx_pin);
 	_SoftSerial_CO2->begin(baudRate);
 
-	if (getCO2_Raw() == -1) {
-		if (_debugMsg) {
-			Serial.println("CO2 Sensor Failed to Initialize ");
-		}
-	} else {
-		Serial.println("CO2 Successfully Initialized. Heating up for 10s");
-		delay(10000);
+	rv = getCO2_Raw();
+
+	if (rv < 0) {
+		Serial.println("CO2 Sensor Failed to Initialize");
+		return rv;
 	}
+
+	Serial.println("CO2 Successfully Initialized. Heating up for 1s");
+	delay(1000);
+
+	return 0;
 }
 
 int AirGradient::getCO2(int numberOfSamplesToTake)
 {
 	int successfulSamplesCounter = 0;
 	int co2AsPpmSum = 0;
-	for (int sample = 0; sample < numberOfSamplesToTake; sample++) {
+	int sample;
+
+	for (sample = 0; sample < numberOfSamplesToTake; sample++) {
 		int co2AsPpm = getCO2_Raw();
-		if (co2AsPpm > 300 && co2AsPpm < 10000) {
-			Serial.println("CO2 read success " + String(co2AsPpm));
-			successfulSamplesCounter++;
-			co2AsPpmSum += co2AsPpm;
-		} else {
+		if (co2AsPpm < 0) {
 			Serial.println("CO2 read failed with " + String(co2AsPpm));
+			continue;
 		}
+
+		Serial.println("CO2 read success " + String(co2AsPpm));
+		successfulSamplesCounter++;
+		co2AsPpmSum += co2AsPpm;
 
 		// without delay we get a few 10ms spacing, add some more
 		delay(250);
@@ -739,46 +747,100 @@ int AirGradient::getCO2(int numberOfSamplesToTake)
 	return co2AsPpmSum / successfulSamplesCounter;
 }
 
+/* Function to calculate MODBUS CRC. */
+uint16_t CO2_crc16_update(uint16_t crc, uint8_t a) {
+	int i;
+
+	crc ^= (uint16_t)a;
+	for (i = 0; i < 8; ++i) {
+		if (crc & 1)
+			crc = (crc >> 1) ^ 0xA001;
+		else
+			crc = (crc >> 1);
+	}
+
+	return crc;
+}
+
 // <<>>
 int AirGradient::getCO2_Raw()
 {
+	const byte CO2Command[] = { 0xFE, 0x04, 0x00, 0x03, 0x00, 0x01, 0xD5, 0xC5 };
+	byte CO2Response[32] = { 0 };
+	int timeoutCounter = 0;
+	int numberOfBytesWritten;
+	uint16_t crc = 0xFFFF;
+	uint16_t i = 0;
+
 	while (_SoftSerial_CO2->available()) // flush whatever we might have
 		_SoftSerial_CO2->read();
 
-	const byte CO2Command[] = { 0XFE, 0X04, 0X00, 0X03, 0X00, 0X01, 0XD5, 0XC5 };
-	byte CO2Response[] = { 0, 0, 0, 0, 0, 0, 0 };
-	int datapos = -1;
+	numberOfBytesWritten = _SoftSerial_CO2->write(CO2Command, sizeof(CO2Command));
 
-	const int commandSize = 8;
-	const int responseSize = 7;
-
-	int numberOfBytesWritten = _SoftSerial_CO2->write(CO2Command, commandSize);
-
-	if (numberOfBytesWritten != commandSize) {
+	if (numberOfBytesWritten != sizeof(CO2Command)) {
 		// failed to write request
-		return -2;
-	}
-	// attempt to read response
-	int timeoutCounter = 0;
-	while (_SoftSerial_CO2->available() < responseSize) {
-		timeoutCounter++;
-		if (timeoutCounter > 10) {
-			// timeout when reading response
-			return -3;
-		}
-		delay(50);
+		return -1;
 	}
 
-	// we have 7 bytes ready to be read
-	for (int i = 0; i < responseSize; i++) {
-		CO2Response[i] = _SoftSerial_CO2->read();
-		if ((CO2Response[i] == 0xFE) && (datapos == -1)) {
-			datapos = i;
+	/* Attempt to read response
+	 * [0]		- 0xFE (Any address)
+	 * [1]		- Command response
+	 * [2]		- n bytes to read
+	 * [n]		- data
+	 * [n+1]	- CRC
+	 * [n+2]	- CRC
+	 */
+	while (1) {
+		if (timeoutCounter > 10 || i >= sizeof(CO2Command)) {
+			// timeout or response not found
+			return -2;
 		}
-		Serial.print(CO2Response[i], HEX);
-		Serial.print(":");
+
+		if (!_SoftSerial_CO2->available()) {
+			timeoutCounter++;
+			delay(50);
+			continue;
+		}
+
+		CO2Response[i] = _SoftSerial_CO2->read();
+
+		/* check for start, command response and response size */
+		switch (i) {
+		case 0:
+			/* start */
+			if (CO2Response[i] != 0xFE)
+				continue;
+			break;
+		case 1:
+			/* command response */
+			if (CO2Response[i] != 0x04)
+				return -3;
+			break;
+		case 2:
+			/* response size (cant be more than two bytes) */
+			if (CO2Response[i] != 0x2)
+				return -4;
+			break;
+		}
+
+		if ((2 + CO2Response[2]) >= i) {
+			/* do not calculate crc for last two bytes */
+			crc = CO2_crc16_update(crc, CO2Response[i]);
+		} else if ((2 + 2 + CO2Response[2]) == i) {
+			/* done */
+			break;
+		}
+
+		i++;
 	}
-	return CO2Response[datapos + 3] * 256 + CO2Response[datapos + 4];
+
+	if (	((uint8_t)crc != CO2Response[i-1]) ||
+		((uint8_t)(crc >> 8) != CO2Response[i])) {
+		Serial.print("crc missmatch\n");
+		return -5;
+	}
+
+	return (CO2Response[3] << 8) + CO2Response[4];
 }
 
 //END CO2 FUNCTIONS //

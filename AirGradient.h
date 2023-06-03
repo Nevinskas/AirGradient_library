@@ -239,9 +239,9 @@ class AirGradient {
 	//TMP_RH VARIABLES PUBLIC END
 
 	//CO2 VARIABLES PUBLIC START
-	void CO2_Init();
-	void CO2_Init(int, int);
-	void CO2_Init(int, int, int);
+	int CO2_Init();
+	int CO2_Init(int, int);
+	int CO2_Init(int, int, int);
 	int getCO2(int numberOfSamplesToTake = 5);
 	int getCO2_Raw();
 	SoftwareSerial *_SoftSerial_CO2;
