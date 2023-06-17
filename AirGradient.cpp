@@ -423,15 +423,19 @@ TMP_RH_ErrorCode AirGradient::reset()
 TMP_RH AirGradient::periodicFetchData() //
 {
 	TMP_RH result;
-	TMP_RH_ErrorCode error = writeCommand(SHT3XD_CMD_FETCH_DATA);
-	if (error == SHT3XD_NO_ERROR) {
-		result = readTemperatureAndHumidity();
-		sprintf(result.t_char, "%d", result.t);
-		sprintf(result.rh_char, "%f", result.rh);
+	TMP_RH_ErrorCode error;
 
-		return result;
-	} else
+	error = writeCommand(SHT3XD_CMD_FETCH_DATA);
+
+	if (error != SHT3XD_NO_ERROR)
 		return returnError(error);
+
+	result = readTemperatureAndHumidity();
+
+	if (result.error != SHT3XD_NO_ERROR)
+		return returnError(result.error);
+
+	return result;
 }
 
 TMP_RH_ErrorCode AirGradient::periodicStop()
@@ -581,24 +585,34 @@ TMP_RH_ErrorCode AirGradient::clearAll()
 	return writeCommand(SHT3XD_CMD_CLEAR_STATUS);
 }
 
+uint16_t AirGradient::readStatus()
+{
+	uint8_t buf[3];
+
+	//writeCommand(SHT3XD_CMD_HEATER_DISABLE);
+	writeCommand(SHT3XD_CMD_READ_STATUS);
+
+	Wire.requestFrom(_address, sizeof(buf));
+	Wire.readBytes(buf, sizeof(buf));
+	return (buf[0] << 8) | buf[1];
+}
+
 TMP_RH AirGradient::readTemperatureAndHumidity() //
 {
-	TMP_RH result;
+	TMP_RH result = {0};
 
 	result.t = 0;
 	result.rh = 0;
 
-	TMP_RH_ErrorCode error;
 	uint16_t buf[2];
 
-	if (error == SHT3XD_NO_ERROR)
-		error = read_TMP_RH(buf, 2);
+	result.error = read_TMP_RH(buf, 2);
 
-	if (error == SHT3XD_NO_ERROR) {
-		result.t = calculateTemperature(buf[0]);
-		result.rh = calculateHumidity(buf[1]);
-	}
-	result.error = error;
+	if (result.error != SHT3XD_NO_ERROR)
+		return result;
+
+	result.t = calculateTemperature(buf[0]);
+	result.rh = calculateHumidity(buf[1]);
 
 	return result;
 }
@@ -608,13 +622,15 @@ TMP_RH_ErrorCode AirGradient::read_TMP_RH(uint16_t *data, uint8_t numOfPair) //
 	uint8_t buf[2];
 	uint8_t checksum;
 
+	/* MSB LSB CRC */
 	const uint8_t numOfBytes = numOfPair * 3;
+
 	Wire.requestFrom(_address, numOfBytes);
 
 	int counter = 0;
 
 	for (counter = 0; counter < numOfPair; counter++) {
-		Wire.readBytes(buf, (uint8_t)2);
+		Wire.readBytes(buf, 2);
 		checksum = Wire.read();
 
 		if (checkCrc(buf, checksum) != 0)
@@ -634,7 +650,7 @@ uint8_t AirGradient::checkCrc(uint8_t data[], uint8_t checksum) //
 float AirGradient::calculateTemperature(uint16_t rawValue) //
 {
 	float value = 175.0f * (float)rawValue / 65535.0f - 45.0f;
-	return round(value * 10) / 10;
+	return round(value * 100) / 100;
 }
 
 float AirGradient::calculateHumidity(uint16_t rawValue) //
@@ -666,16 +682,6 @@ TMP_RH AirGradient::returnError(TMP_RH_ErrorCode error)
 	TMP_RH result;
 	result.t = -1;
 	result.rh = -1;
-
-	result.t_char[0] = 'N';
-	result.t_char[1] = 'U';
-	result.t_char[2] = 'L';
-	result.t_char[3] = 'L';
-
-	result.rh_char[0] = 'N';
-	result.rh_char[1] = 'U';
-	result.rh_char[2] = 'L';
-	result.rh_char[3] = 'L';
 
 	result.error = error;
 	return result;

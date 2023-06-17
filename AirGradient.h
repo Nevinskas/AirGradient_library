@@ -126,9 +126,7 @@ typedef union {
 
 struct TMP_RH {
 	float t;
-	int rh;
-	char t_char[10];
-	char rh_char[10];
+	float rh;
 	TMP_RH_ErrorCode error;
 };
 struct TMP_RH_Char {
