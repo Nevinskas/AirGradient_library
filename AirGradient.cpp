@@ -1,7 +1,6 @@
 /*
-   Test.h - Test library for Wiring - implementation
-   Copyright (c) 2006 John Doe.  All right reserved.
-   */
+ * AirGradient
+ */
 
 // include this library's description file
 #include "AirGradient.h"
@@ -49,192 +48,27 @@ AirGradient::AirGradient(bool displayMsg, int baudRate)
 // Public Methods //////////////////////////////////////////////////////////////
 // Functions available in Wiring sketches, this library, and other libraries
 
-void AirGradient::PMS_Init()
+int AirGradient::PMS_Init(int rx_pin, int tx_pin, int baud_rate, int set_pin)
 {
-	if (_debugMsg) {
-		Serial.println("Initializing PMS...");
-	}
-	PMS_Init(D5, D6);
-}
+	SoftwareSerial *SoftSerial_PMS = new SoftwareSerial(rx_pin, tx_pin);
+	SoftSerial_PMS->begin(baud_rate);
 
-void AirGradient::PMS_Init(int rx_pin, int tx_pin)
-{
-	PMS_Init(rx_pin, tx_pin, 9600);
-}
+	this->PMS_stream = SoftSerial_PMS;
 
-void AirGradient::PMS_Init(int rx_pin, int tx_pin, int baudRate)
-{
-	_SoftSerial_PMS = new SoftwareSerial(rx_pin, tx_pin);
-	PMS(*_SoftSerial_PMS);
-	_SoftSerial_PMS->begin(baudRate);
+	if (set_pin != -1)
+		PMS_init_set_pin(set_pin);
 
-	if (getPM2() <= 0) {
-		if (_debugMsg) {
-			Serial.println("PMS Sensor Failed to Initialize ");
-		} else {
-			Serial.println("PMS Successfully Initialized. Heating up for 10s");
-			delay(10000);
-		}
-	}
-}
+	delay(1000);
 
-const char *AirGradient::getPM2()
-{
-	if (getPM2_Raw()) {
-		int result_raw = getPM2_Raw();
-		sprintf(Char_PM2, "%d", result_raw);
-		return Char_PM2;
-	} else {
-		//Serial.println("no PMS data");
-		Char_PM2[0] = 'N';
-		Char_PM2[1] = 'U';
-		Char_PM2[2] = 'L';
-		Char_PM2[3] = 'L';
-		return Char_PM2;
-	}
-}
-
-int AirGradient::getPM2_Raw()
-{
-	int pm02;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		pm02 = data.PM_AE_UG_2_5;
-		return pm02;
-	} else {
+	if (PMS_read_raw(NULL, 1)) {
+		Serial.println("PMS Sensor Failed to Initialize");
 		return -1;
 	}
-}
 
-int AirGradient::getPM1_Raw()
-{
-	int pm02;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		pm02 = data.PM_AE_UG_1_0;
-		return pm02;
-	} else {
-		return -1;
-	}
-}
+	Serial.println("PMS Successfully Initialized. Heating up for 10s");
+	delay(10000);
 
-int AirGradient::getPM10_Raw()
-{
-	int pm02;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		pm02 = data.PM_AE_UG_10_0;
-		return pm02;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getPM0_3Count()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_RAW_0_3;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getPM10_0Count()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_RAW_10_0;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getPM5_0Count()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_RAW_5_0;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getPM2_5Count()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_RAW_2_5;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getPM1_0Count()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_RAW_1_0;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getPM0_5Count()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_RAW_0_5;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getAMB_TMP()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_TMP;
-		return count;
-	} else {
-		return -1;
-	}
-}
-
-int AirGradient::getAMB_HUM()
-{
-	int count;
-	DATA data;
-	requestRead();
-	if (readUntil(data)) {
-		count = data.PM_HUM;
-		return count;
-	} else {
-		return -1;
-	}
+	return 0;
 }
 
 // Private Methods /////////////////////////////////////////////////////////////
@@ -242,162 +76,184 @@ int AirGradient::getAMB_HUM()
 
 //START PMS FUNCTIONS //
 
-void AirGradient::PMS(Stream &stream)
-{
-	this->_stream = &stream;
-}
-
 // Standby mode. For low power consumption and prolong the life of the sensor.
-void AirGradient::sleep()
+void AirGradient::PMS_cmd_sleep()
 {
-	uint8_t command[] = { 0x42, 0x4D, 0xE4, 0x00, 0x00, 0x01, 0x73 };
-	_stream->write(command, sizeof(command));
+	const uint8_t command[] = { 0x42, 0x4D, 0xE4, 0x00, 0x00, 0x01, 0x73 };
+	if (PMS_set_pin != -1)
+		digitalWrite(PMS_set_pin, LOW);
+	else
+		PMS_stream->write(command, sizeof(command));
 }
 
 // Operating mode. Stable data should be got at least 30 seconds after the sensor wakeup from the sleep mode because of the fan's performance.
-void AirGradient::wakeUp()
+void AirGradient::PMS_cmd_wake_up()
 {
-	uint8_t command[] = { 0x42, 0x4D, 0xE4, 0x00, 0x01, 0x01, 0x74 };
-	_stream->write(command, sizeof(command));
+	const uint8_t command[] = { 0x42, 0x4D, 0xE4, 0x00, 0x01, 0x01, 0x74 };
+	if (PMS_set_pin != -1)
+		digitalWrite(PMS_set_pin, HIGH);
+	else
+		PMS_stream->write(command, sizeof(command));
 }
 
 // Active mode. Default mode after power up. In this mode sensor would send serial data to the host automatically.
-void AirGradient::activeMode()
+void AirGradient::PMS_cmd_active_mode()
 {
-	uint8_t command[] = { 0x42, 0x4D, 0xE1, 0x00, 0x01, 0x01, 0x71 };
-	_stream->write(command, sizeof(command));
-	_mode = MODE_ACTIVE;
+	const uint8_t command[] = { 0x42, 0x4D, 0xE1, 0x00, 0x01, 0x01, 0x71 };
+	PMS_stream->write(command, sizeof(command));
 }
 
 // Passive mode. In this mode sensor would send serial data to the host only for request.
-void AirGradient::passiveMode()
+void AirGradient::PMS_cmd_passive_mode()
 {
-	uint8_t command[] = { 0x42, 0x4D, 0xE1, 0x00, 0x00, 0x01, 0x70 };
-	_stream->write(command, sizeof(command));
-	_mode = MODE_PASSIVE;
+	const uint8_t command[] = { 0x42, 0x4D, 0xE1, 0x00, 0x00, 0x01, 0x70 };
+	PMS_stream->write(command, sizeof(command));
 }
 
-// Request read in Passive Mode.
-void AirGradient::requestRead()
+// Request read
+void AirGradient::PMS_cmd_request_read()
 {
-	if (_mode == MODE_PASSIVE) {
-		uint8_t command[] = { 0x42, 0x4D, 0xE2, 0x00, 0x00, 0x01, 0x71 };
-		_stream->write(command, sizeof(command));
+	const uint8_t command[] = { 0x42, 0x4D, 0xE2, 0x00, 0x00, 0x01, 0x71 };
+	PMS_stream->write(command, sizeof(command));
+}
+
+void AirGradient::PMS_fill_data(PM_DATA *data, byte *buffer)
+{
+	if (data == NULL || buffer == NULL)
+		return;
+
+	// Standard Particles, CF=1.
+	data->PM_SP_UG_1_0 = makeWord(buffer[0], buffer[1]);
+	data->PM_SP_UG_2_5 = makeWord(buffer[2], buffer[3]);
+	data->PM_SP_UG_10_0 = makeWord(buffer[4], buffer[5]);
+
+	// Atmospheric Environment.
+	data->PM_AE_UG_1_0 = makeWord(buffer[6], buffer[7]);
+	data->PM_AE_UG_2_5 = makeWord(buffer[8], buffer[9]);
+	data->PM_AE_UG_10_0 = makeWord(buffer[10], buffer[11]);
+
+	// Total particles count per 100ml air
+	data->PM_RAW_0_3 = makeWord(buffer[12], buffer[13]);
+	data->PM_RAW_0_5 = makeWord(buffer[14], buffer[15]);
+	data->PM_RAW_1_0 = makeWord(buffer[16], buffer[17]);
+	data->PM_RAW_2_5 = makeWord(buffer[18], buffer[19]);
+	data->PM_RAW_5_0 = makeWord(buffer[20], buffer[21]);
+	data->PM_RAW_10_0 = makeWord(buffer[22], buffer[23]);
+
+#if 0 /* PMS5003 does not support this */
+	// Temperature & humidity (PMSxxxxST units only)
+	data->PM_TMP = makeWord(buffer[20], buffer[21]) / 10;
+	data->PM_HUM = makeWord(buffer[22], buffer[23]) / 10;
+
+	// Formaldehyde concentration (PMSxxxxST units only)
+	data->AMB_HCHO = makeWord(buffer[24], buffer[25]) / 1000;
+#endif
+}
+
+int AirGradient::PMS_read_raw(PM_DATA *data, bool init)
+{
+	uint16_t checksum_calculated = 0;
+	uint16_t checksum_received;
+	uint16_t frame_len;
+	byte PMS_response[64] = { 0 };
+	uint8_t timeout_cnt = 0;
+	uint16_t i = 0;
+
+	/* clear any data from the line */
+	PMS_stream->flush();
+
+	PMS_cmd_request_read();
+
+next_byte:
+	if (timeout_cnt > 10) {
+		Serial.println("PMS: read timeout");
+		return -1;
 	}
-}
 
-// Non-blocking function for parse response.
-bool AirGradient::read_PMS(DATA &data)
-{
-	_data = &data;
-	loop();
+	if (!PMS_stream->available()) {
+		timeout_cnt++;
+		Serial.println("PMS: nothing to read. waiting...");
+		delay(15);
+		goto next_byte;
+	}
 
-	return _PMSstatus == STATUS_OK;
-}
+	if (i >= sizeof(PMS_response)) {
+		Serial.println("PMS: Response too long. Bailing out...");
+		return -1;
+	}
 
-// Blocking function for parse response. Default timeout is 1s.
-bool AirGradient::readUntil(DATA &data, uint16_t timeout)
-{
-	_data = &data;
-	uint32_t start = millis();
-	do {
-		loop();
-		if (_PMSstatus == STATUS_OK)
-			break;
-	} while (millis() - start < timeout);
+	PMS_response[i] = PMS_stream->read();
 
-	return _PMSstatus == STATUS_OK;
-}
+	//Serial.println("PMS: [" + String(i) + "]: 0x"+String(PMS_response[i], HEX));
 
-void AirGradient::loop()
-{
-	_PMSstatus = STATUS_WAITING;
-	if (_stream->available()) {
-		uint8_t ch = _stream->read();
+	/* Attempt to read response
+	 * [0]		- 0x42
+	 * [1]		- 0x4D
+	 * [2]		- Frame length high 8 bits
+	 * [3]		- Frame length low 8 bits
+	 * [4..29]	- data
+	 * [30]		- CRC
+	 * [31]		- CRC
+	 */
 
-		switch (_index) {
-		case 0:
-			if (ch != 0x42) {
-				return;
-			}
-			_calculatedChecksum = ch;
+	switch (i) {
+	case 0:
+		if (PMS_response[i] == 0x42)
 			break;
 
-		case 1:
-			if (ch != 0x4D) {
-				_index = 0;
-				return;
-			}
-			_calculatedChecksum += ch;
+		Serial.println("PMS: first byte is incorrect: 0x" + String(PMS_response[i], HEX));
+		goto next_byte;
+	case 1:
+		if (PMS_response[i] == 0x4D)
 			break;
 
-		case 2:
-			_calculatedChecksum += ch;
-			_frameLen = ch << 8;
-			break;
+		Serial.println("PMS: second byte is incorrect: 0x" + String(PMS_response[i], HEX));
+		return -3;
+	case 2:
+		frame_len = PMS_response[i] << 8;
+		break;
+	case 3:
+		frame_len |= PMS_response[i];
+		break;
+	}
 
-		case 3:
-			_frameLen |= ch;
-			// Unsupported sensor, different frame length, transmission error e.t.c.
-			if (_frameLen != 2 * 9 + 2 && _frameLen != 2 * 13 + 2) {
-				_index = 0;
-				return;
-			}
-			_calculatedChecksum += ch;
-			break;
+	/* frame_len is only filled if i is higher or equal to 4,
+	 * hence the i >= 4.
+	 */
+	if (i == frame_len + 2 && i >= 4) {
+		checksum_received = PMS_response[i] << 8;
+	} else if (i == frame_len + 2 + 1 && i >= 4) {
+		checksum_received |= PMS_response[i];
 
-		default:
-			if (_index == _frameLen + 2) {
-				_checksum = ch << 8;
-			} else if (_index == _frameLen + 2 + 1) {
-				_checksum |= ch;
-
-				if (_calculatedChecksum == _checksum) {
-					_PMSstatus = STATUS_OK;
-
-					// Standard Particles, CF=1.
-					_data->PM_SP_UG_1_0 = makeWord(_payload[0], _payload[1]);
-					_data->PM_SP_UG_2_5 = makeWord(_payload[2], _payload[3]);
-					_data->PM_SP_UG_10_0 = makeWord(_payload[4], _payload[5]);
-
-					// Atmospheric Environment.
-					_data->PM_AE_UG_1_0 = makeWord(_payload[6], _payload[7]);
-					_data->PM_AE_UG_2_5 = makeWord(_payload[8], _payload[9]);
-					_data->PM_AE_UG_10_0 = makeWord(_payload[10], _payload[11]);
-
-					// Total particles count per 100ml air
-					_data->PM_RAW_0_3 = makeWord(_payload[12], _payload[13]);
-					_data->PM_RAW_0_5 = makeWord(_payload[14], _payload[15]);
-					_data->PM_RAW_1_0 = makeWord(_payload[16], _payload[17]);
-					_data->PM_RAW_2_5 = makeWord(_payload[18], _payload[19]);
-					_data->PM_RAW_5_0 = makeWord(_payload[20], _payload[21]);
-					_data->PM_RAW_10_0 = makeWord(_payload[22], _payload[23]);
-
-					// Formaldehyde concentration (PMSxxxxST units only)
-					_data->AMB_HCHO = makeWord(_payload[24], _payload[25]) / 1000;
-
-					// Temperature & humidity (PMSxxxxST units only)
-					_data->PM_TMP = makeWord(_payload[20], _payload[21]) / 10;
-					_data->PM_HUM = makeWord(_payload[22], _payload[23]) / 10;
-				}
-
-				_index = 0;
-				return;
-			} else {
-				_calculatedChecksum += ch;
-				uint8_t payloadIndex = _index - 4;
-
-				// Payload is common to all sensors (first 2x6 bytes).
-				if (payloadIndex < sizeof(_payload)) {
-					_payload[payloadIndex] = ch;
-				}
-			}
-
-			break;
+		if (checksum_calculated != checksum_received) {
+			Serial.println("PMS: checksum error: message: 0x" +
+					String(checksum_received, HEX) +
+					" calculated: 0x" +
+					String(checksum_calculated, HEX));
+			return -4;
 		}
 
-		_index++;
+		//Serial.println("PMS: checksum LGTM: message: 0x" +
+		//		String(checksum_received, HEX) +
+		//		" calculated: 0x" +
+		//		String(checksum_calculated, HEX));
+
+		/* There is no way to check if the returned data is the PMS measurments.
+		 * Hence only updating the measurments only when frame len is 28.
+		 */
+		if (init || frame_len != 28)
+			return 0;
+
+		PMS_fill_data(data, &PMS_response[4]);
+
+		return 0;
+
+	} else {
+		checksum_calculated += PMS_response[i];
 	}
+
+	i++;
+	goto next_byte;
 }
 
 //END PMS FUNCTIONS //
@@ -599,7 +455,7 @@ uint16_t AirGradient::readStatus()
 
 TMP_RH AirGradient::readTemperatureAndHumidity() //
 {
-	TMP_RH result = {0};
+	TMP_RH result = { 0 };
 
 	result.t = 0;
 	result.rh = 0;
@@ -754,7 +610,8 @@ int AirGradient::getCO2(int numberOfSamplesToTake)
 }
 
 /* Function to calculate MODBUS CRC. */
-uint16_t CO2_crc16_update(uint16_t crc, uint8_t a) {
+uint16_t CO2_crc16_update(uint16_t crc, uint8_t a)
+{
 	int i;
 
 	crc ^= (uint16_t)a;
@@ -797,6 +654,10 @@ int AirGradient::getCO2_Raw()
 	 * [n+2]	- CRC
 	 */
 	while (1) {
+		/* Q: why i >= sizeof(CO2Command) ?
+		 * A: response should be one byte shorter than this
+		 * particular command. Not a good check.
+		 */
 		if (timeoutCounter > 10 || i >= sizeof(CO2Command)) {
 			// timeout or response not found
 			return -2;
@@ -804,7 +665,7 @@ int AirGradient::getCO2_Raw()
 
 		if (!_SoftSerial_CO2->available()) {
 			timeoutCounter++;
-			delay(50);
+			delay(10);
 			continue;
 		}
 
@@ -842,7 +703,7 @@ int AirGradient::getCO2_Raw()
 
 	if (	((uint8_t)crc != CO2Response[i-1]) ||
 		((uint8_t)(crc >> 8) != CO2Response[i])) {
-		Serial.print("crc missmatch\n");
+		Serial.print("CO2: crc missmatch\n");
 		return -5;
 	}
 

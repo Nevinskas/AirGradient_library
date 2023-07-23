@@ -129,10 +129,38 @@ struct TMP_RH {
 	float rh;
 	TMP_RH_ErrorCode error;
 };
+
 struct TMP_RH_Char {
 	TMP_RH_ErrorCode error;
 };
 // ENUMS AND STRUCTS FOR TMP_RH END
+
+struct PM_DATA {
+	// Standard Particles, CF=1
+	uint16_t PM_SP_UG_1_0;
+	uint16_t PM_SP_UG_2_5;
+	uint16_t PM_SP_UG_10_0;
+
+	// Atmospheric environment
+	uint16_t PM_AE_UG_1_0;
+	uint16_t PM_AE_UG_2_5;
+	uint16_t PM_AE_UG_10_0;
+
+	// Raw particles count (number of particles in 0.1l of air
+	uint16_t PM_RAW_0_3;
+	uint16_t PM_RAW_0_5;
+	uint16_t PM_RAW_1_0;
+	uint16_t PM_RAW_2_5;
+	uint16_t PM_RAW_5_0;
+	uint16_t PM_RAW_10_0;
+
+	// Formaldehyde (HCHO) concentration in mg/m^3 - PMSxxxxST units only
+	uint16_t AMB_HCHO;
+
+	// Temperature & humidity - PMSxxxxST units only
+	int16_t PM_TMP;
+	uint16_t PM_HUM;
+};
 
 //ENUMS STRUCTS FOR CO2 START
 struct CO2_READ_RESULT {
@@ -150,76 +178,19 @@ class AirGradient {
 
 	static void setOutput(Print &debugOut, bool verbose = true);
 
-	void beginCO2(void);
-	void beginCO2(int, int);
-	void PMS_Init(void);
-	void PMS_Init(int, int);
-	void PMS_Init(int, int, int);
-
 	bool _debugMsg;
 
-	//PMS VARIABLES PUBLIC_START
-	static const uint16_t SINGLE_RESPONSE_TIME = 1000;
-	static const uint16_t TOTAL_RESPONSE_TIME = 1000 * 10;
-	static const uint16_t STEADY_RESPONSE_TIME = 1000 * 30;
-
-	static const uint16_t BAUD_RATE = 9600;
-
-	struct DATA {
-		// Standard Particles, CF=1
-		uint16_t PM_SP_UG_1_0;
-		uint16_t PM_SP_UG_2_5;
-		uint16_t PM_SP_UG_10_0;
-
-		// Atmospheric environment
-		uint16_t PM_AE_UG_1_0;
-		uint16_t PM_AE_UG_2_5;
-		uint16_t PM_AE_UG_10_0;
-
-		// Raw particles count (number of particles in 0.1l of air
-		uint16_t PM_RAW_0_3;
-		uint16_t PM_RAW_0_5;
-		uint16_t PM_RAW_1_0;
-		uint16_t PM_RAW_2_5;
-		uint16_t PM_RAW_5_0;
-		uint16_t PM_RAW_10_0;
-
-		// Formaldehyde (HCHO) concentration in mg/m^3 - PMSxxxxST units only
-		uint16_t AMB_HCHO;
-
-		// Temperature & humidity - PMSxxxxST units only
-		int16_t PM_TMP;
-		uint16_t PM_HUM;
-	};
-
-	void PMS(Stream &);
-	void sleep();
-	void wakeUp();
-	void activeMode();
-	void passiveMode();
-
-	void requestRead();
-	bool read_PMS(DATA &data);
-	bool readUntil(DATA &data, uint16_t timeout = SINGLE_RESPONSE_TIME);
-
-	const char *getPM2();
-	int getPM2_Raw();
-	int getPM1_Raw();
-	int getPM10_Raw();
-
-	int getPM0_3Count();
-	int getPM0_5Count();
-	int getPM1_0Count();
-	int getPM2_5Count();
-	int getPM5_0Count();
-	int getPM10_0Count();
-
-	int getAMB_TMP();
-	int getAMB_HUM();
-
-	//PMS VARIABLES PUBLIC_END
+	//PMS PUBLIC_START
+	int PMS_Init(int rx_pin = D5, int tx_pin = D6, int baud_rate = 9600, int set_pin = -1);
+	int PMS_read_raw(PM_DATA *data, bool init = 0);
+	void PMS_cmd_sleep();
+	void PMS_cmd_wake_up();
+	void PMS_cmd_active_mode();
+	void PMS_cmd_passive_mode();
+	//PMS PUBLIC_END
 
 	//TMP_RH VARIABLES PUBLIC START
+	uint16_t readStatus();
 	void ClosedCube_TMP_RH();
 	TMP_RH_ErrorCode TMP_RH_Init(uint8_t address);
 	TMP_RH_ErrorCode clearAll();
@@ -260,28 +231,13 @@ class AirGradient {
 
 	// library-accessible "private" interface
     private:
-	int value;
-
-	//PMS VARIABLES PRIVATE START
-	enum STATUS { STATUS_WAITING, STATUS_OK };
-	enum MODE { MODE_ACTIVE, MODE_PASSIVE };
-
-	uint8_t _payload[32];
-	Stream *_stream;
-	DATA *_data;
-	STATUS _PMSstatus;
-	MODE _mode = MODE_ACTIVE;
-
-	uint8_t _index = 0;
-	uint16_t _frameLen;
-	uint16_t _checksum;
-	uint16_t _calculatedChecksum;
-	SoftwareSerial *_SoftSerial_PMS;
-	void loop();
-	char Char_PM1[10];
-	char Char_PM2[10];
-	char Char_PM10[10];
-	//PMS VARIABLES PRIVATE END
+	//PMS PRIVATE_START
+	Stream *PMS_stream;
+	int PMS_set_pin = -1;
+	void PMS_fill_data(PM_DATA *data, byte *buffer);
+	void PMS_cmd_request_read();
+	void PMS_init_set_pin(int set_pin) { PMS_set_pin = set_pin; digitalWrite(PMS_set_pin, HIGH); };
+	//PMS PRIVATE_END
 
 	//TMP_RH VARIABLES PRIVATE START
 	uint8_t _address;
@@ -302,12 +258,7 @@ class AirGradient {
 	TMP_RH returnError(TMP_RH_ErrorCode command);
 	//TMP_RH VARIABLES PRIVATE END
 
-	//CO2 VARABLES PUBLIC START
-	char Char_CO2[10];
-
-	//CO2 VARABLES PUBLIC END
 	//MHZ19 VARABLES PUBLIC START
-
 	int readInternal_MHZ19();
 
 	uint8_t _type_MHZ19, temperature_MHZ19;
